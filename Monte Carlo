@@ -1,0 +1,62 @@
+import numpy as np
+
+class AsianOptionMC:
+    def __init__(self, S0, K, T, r, sigma, n_steps, n_sims):
+        self.S0 = S0
+        self.K = K
+        self.T = T
+        self.r = r
+        self.sigma = sigma
+        self.n_steps = n_steps
+        self.n_sims = n_sims
+
+    def simulate_paths(self):
+        dt = self.T / self.n_steps
+        Z = np.random.standard_normal((self.n_sims, self.n_steps))
+        increments = (self.r - 0.5*self.sigma**2)*dt + self.sigma*np.sqrt(dt)*Z
+        log_paths = np.cumsum(increments, axis=1)
+        S_paths = self.S0 * np.exp(log_paths)
+        S_paths = np.concatenate((self.S0*np.ones((self.n_sims,1)), S_paths), axis=1)
+        return S_paths
+
+    def price(self, option_type, average_type):
+        S_paths = self.simulate_paths()
+        if average_type.lower() == "arithmetic":
+            S_avg = np.mean(S_paths, axis=1)
+        elif average_type.lower() == "geometric":
+            S_avg = np.exp(np.mean(np.log(S_paths), axis=1))
+        else:
+            raise ValueError("average_type must be 'arithmetic' or 'geometric'")
+
+        if option_type.lower() == "call":
+            payoff = np.maximum(S_avg - self.K, 0)
+        elif option_type.lower() == "put":
+            payoff = np.maximum(self.K - S_avg, 0)
+        else:
+            raise ValueError("option_type must be 'call' or 'put'")
+
+        return np.exp(-self.r*self.T) * np.mean(payoff)
+
+
+
+# User input
+
+S0 = float(input("Enter initial stock price S0: "))
+K = float(input("Enter strike price K: "))
+T = float(input("Enter time to maturity T (years): "))
+r = float(input("Enter risk-free interest rate r (decimal, e.g., 0.05): "))
+sigma = float(input("Enter volatility sigma (decimal, e.g., 0.2): "))
+n_steps = int(input("Enter number of time steps: "))
+n_sims = int(input("Enter number of Monte Carlo simulations: "))
+
+
+# Create Asian option object
+
+asian_mc = AsianOptionMC(S0, K, T, r, sigma, n_steps, n_sims)
+
+# price arithmetic and geometric Asian calls
+price_arith = asian_mc.price(option_type="call", average_type="arithmetic")
+price_geom = asian_mc.price(option_type="call", average_type="geometric")
+
+print(f"\n- Asian Arithmetic Call: {price_arith:.3f}")
+print(f"- Asian Geometric Call:  {price_geom:.3f}")
