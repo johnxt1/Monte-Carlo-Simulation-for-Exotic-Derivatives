@@ -5,7 +5,7 @@ For the **Arithmetic Asian call option**, the program uses the payoff of the Eur
 
 The **Geometric Asian option** does not require control variates since it has a closed-form solution under the Black–Scholes framework.
 
- ##Features
+ ## Features
 - Simulates stock price paths under Geometric Brownian Motion (GBM)
 - Prices:
   - Arithmetic Asian call & put
