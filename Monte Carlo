@@ -11,82 +11,117 @@ class AsianOptionMC:
         self.n_steps = n_steps
         self.n_sims = n_sims
 
-    # -------------------- Monte Carlo GBM paths --------------------
+    # ----------------- Monte Carlo GBM paths ----------------
     def simulate_paths(self):
         dt = self.T / self.n_steps
         Z = np.random.standard_normal((self.n_sims, self.n_steps))
-        increments = (self.r - 0.5*self.sigma**2)*dt + self.sigma*np.sqrt(dt)*Z
-        log_paths = np.cumsum(increments, axis=1)
-        S_paths = self.S0 * np.exp(log_paths)
-        S_paths = np.concatenate((self.S0*np.ones((self.n_sims,1)), S_paths), axis=1)
+        changes = (self.r - 0.5 * self.sigma**2)*dt + self.sigma * np.sqrt(dt) * Z
+        accumulated_changes = np.cumsum(changes, axis=1)  # Add each simulation's changes through time.
+        S_paths = self.S0 * np.exp(accumulated_changes)  # Convert the accumulated changes into stock prices.
         return S_paths
 
-    # -------------------- Black-Scholes European call --------------------
+    # ----------------- Black-Scholes European call ----------------
     def european_call_price(self):
-        d1 = (np.log(self.S0/self.K) + (self.r + 0.5*self.sigma**2)*self.T) / (self.sigma*np.sqrt(self.T))
-        d2 = d1 - self.sigma*np.sqrt(self.T)
-        price = self.S0*norm.cdf(d1) - self.K*np.exp(-self.r*self.T)*norm.cdf(d2)
+        d1 = (np.log(self.S0 / self.K) + (self.r + 0.5 * self.sigma**2) * self.T) / (self.sigma * np.sqrt(self.T))
+        d2 = d1 - self.sigma * np.sqrt(self.T)
+        price = self.S0 * norm.cdf(d1) - self.K * np.exp(-self.r * self.T) * norm.cdf(d2)
         return price
 
-    # -------------------- Arithmetic Asian call via Monte Carlo --------------------
-    def arithmetic_asian_call_mc(self):
-        S_paths = self.simulate_paths()
-        A_avg = np.mean(S_paths, axis=1)
-        payoff = np.maximum(A_avg - self.K, 0)
-        return np.exp(-self.r*self.T) * np.mean(payoff)
+    #----------------- Black-Scholes European put---------------------
+    def european_put_price(self):
+        d1 = (np.log(self.S0/self.K) + (self.r + 0.5 * self.sigma**2)*self.T) / (self.sigma * np.sqrt(self.T))
+        d2 = d1 - self.sigma * np.sqrt(self.T)
+        price = self.K * np.exp(-self.r * self.T) * norm.cdf(-d2) - self.S0 * norm.cdf(-d1)
+        return price
 
-    # -------------------- Arithmetic Asian call with European call as control variate --------------------
-    def arithmetic_asian_call_cv(self):
-        S_paths = self.simulate_paths()
-        A_avg = np.mean(S_paths, axis=1)      # arithmetic average
-        S_T = S_paths[:,-1]                   # final stock price
+    # ---------------- Arithmetic Asian call via Monte Carlo --------------
+    def arithmetic_asian_call_mc(self,S_paths):
+        Ar_avg = np.mean(S_paths, axis=1) #calculate one arithmetic average for every path
+        payoff = np.maximum(Ar_avg - self.K, 0)
+        return np.exp(-self.r * self.T) * np.mean(payoff)  #price obtained by averaging all simulated payoffs and discounting back to today
 
-        # Payoffs
-        Y = np.maximum(A_avg - self.K, 0)     # arithmetic payoff
-        X = np.maximum(S_T - self.K, 0)       # European payoff
-        C_BS = self.european_call_price()     # Black-Scholes price
+    #----------------- Arithmetic Asian put via Monte Carlo ---------------
+    def arithmetic_asian_put_mc(self,S_paths): 
+         Ar_avg = np.mean(S_paths, axis=1)
+         payoff = np.maximum( self.K - Ar_avg, 0)
+         return np.exp(-self.r * self.T) * np.mean(payoff)
 
-        # beta via covariance
+    # ---------------- Arithmetic Asian call with European call as control variate -------------
+    def arithmetic_asian_call_cv(self,S_paths):
+        Ar_avg = np.mean(S_paths, axis=1)      # arithmetic average
+        S_T = S_paths[:, -1]                 # final stock price
+        discount = np.exp(-self.r*self.T)
+
+        # Discount both payoffs so they can be compared with C_BS.
+        Y = discount * np.maximum(Ar_avg - self.K, 0)  # Asian payoff
+        X = discount * np.maximum(S_T - self.K, 0)    # European payoff
+        C_BS = self.european_call_price()             # exact European price
+
+        # Calculate beta via covariance
         cov_matrix = np.cov(Y, X)
-        beta = cov_matrix[0,1] / cov_matrix[1,1]
+
+        if cov_matrix[1,1] == 0:
+            beta = 0   #to avoid dividing by zero
+        else:    
+            beta = cov_matrix[0,1] / cov_matrix[1,1] #Cov(Y,X)/Var(X)
 
         # Control variate adjustment
         Y_star = Y + beta * (C_BS - X)
 
-        price = np.exp(-self.r*self.T) * np.mean(Y_star)
-        return price
+        return np.mean(Y_star) #average adjusted discounted Asian payoffs = estimated price
 
-    # -------------------- General price method --------------------
-    def price(self, option_type, average_type, use_cv=False):
+    # ---------------- Arithmetic Asian put with European put as control variate --------------
+    def arithmetic_asian_put_cv(self,S_paths):
+        Ar_avg = np.mean(S_paths, axis=1)  
+        S_T = S_paths[:, -1]
+        discount = np.exp(-self.r*self.T)
+
+        # Discount both payoffs so they can be compared with P_BS.
+        Y = discount * np.maximum(self.K - Ar_avg, 0)
+        X = discount * np.maximum(self.K - S_T, 0)   
+        P_BS = self.european_put_price()     
+
+        # Calculate beta via covariance
+        cov_matrix = np.cov(Y, X)
+
+        if cov_matrix[1,1] == 0:
+            beta = 0 
+        else:
+            beta = cov_matrix[0,1] / cov_matrix[1,1]
+
+        # Control variate adjustment
+        Y_star = Y + beta * (P_BS - X)
+        return np.mean (Y_star)
+        
+    # --------------- General price method ----------------
+    def price(self, option_type, average_type, S_paths, use_cv=False):
         option_type = option_type.lower()
         average_type = average_type.lower()
 
         if average_type == "arithmetic":
             if option_type == "call":
-                return self.arithmetic_asian_call_cv() if use_cv==True else self.arithmetic_asian_call_mc()
+                return self.arithmetic_asian_call_cv(S_paths) if use_cv==True else self.arithmetic_asian_call_mc(S_paths)
             elif option_type == "put":
-                S_paths = self.simulate_paths()
-                A_avg = np.mean(S_paths, axis=1)
-                payoff = np.maximum(self.K - A_avg, 0)
-                return np.exp(-self.r*self.T) * np.mean(payoff)
+                return self.arithmetic_asian_put_cv(S_paths) if use_cv==True else self.arithmetic_asian_put_mc(S_paths)
             else:
                 raise ValueError("option_type must be 'call' or 'put'")
 
         elif average_type == "geometric":
-            S_paths = self.simulate_paths()
-            G_avg = np.exp(np.mean(np.log(S_paths), axis=1))
+           
+            G_avg = np.prod(S_paths, axis=1) ** (1 / self.n_steps)          
             if option_type == "call":
                 payoff = np.maximum(G_avg - self.K, 0)
             elif option_type == "put":
                 payoff = np.maximum(self.K - G_avg, 0)
             else:
                 raise ValueError("option_type must be 'call' or 'put'")
+            
             return np.exp(-self.r*self.T) * np.mean(payoff)
 
         else:
             raise ValueError("average_type must be 'arithmetic' or 'geometric'")
 
-# -------------------------- User Input --------------------------
+# ------------------- User Input ---------------------
 S0 = float(input("Enter initial stock price S0: "))
 K = float(input("Enter strike price K: "))
 T = float(input("Enter time to maturity T (years): "))
@@ -95,21 +130,26 @@ sigma = float(input("Enter volatility (decimal, e.g., 0.2): "))
 n_steps = int(input("Enter number of time steps: "))
 n_sims = int(input("Enter number of Monte Carlo simulations: "))
 
-
+np.random.seed(42)
 asian_mc = AsianOptionMC(S0, K, T, r, sigma, n_steps, n_sims)
+S_paths = asian_mc.simulate_paths()
 
-# -------------------------- Price the Options --------------------------
-price_arith_call_mc = asian_mc.price(option_type="call", average_type="arithmetic")
-price_arith_call_cv = asian_mc.price(option_type="call", average_type="arithmetic", use_cv=True)
-price_arith_put = asian_mc.price(option_type="put", average_type="arithmetic")
-price_geom_call = asian_mc.price(option_type="call", average_type="geometric")
-price_geom_put = asian_mc.price(option_type="put", average_type="geometric")
+# ------------------- Price the Options -------------------
+price_arith_call_mc = asian_mc.price("call", "arithmetic", S_paths)
+price_arith_call_cv = asian_mc.price("call", "arithmetic", S_paths, use_cv=True)
+price_arith_put_mc = asian_mc.price("put", "arithmetic", S_paths)
+price_arith_put_cv = asian_mc.price("put", "arithmetic", S_paths, use_cv=True)
+price_geom_call = asian_mc.price("call", "geometric", S_paths)
+price_geom_put = asian_mc.price("put", "geometric", S_paths)
 
-# -------------------------- Display Results --------------------------
-print("\n=== Arithmetic Asian Call Comparison ===")
-print(f"Plain Monte Carlo:         {price_arith_call_mc: .4f}")
-print(f"Monte Carlo with European CV: {price_arith_call_cv: .4f}\n")
+# ------------------ Display Results --------------------
+print('\n--- Arithmetic Asian Call Comparison ---')
+print(f"Plain Monte Carlo:  {price_arith_call_mc:.4f}")
+print(f"Monte Carlo with European call as CV:  {price_arith_call_cv:.4f}\n")
 
-print(f"Arithmetic Asian Put:      {price_arith_put: .4f}")
-print(f"Geometric Asian Call:      {price_geom_call: .4f}")
-print(f"Geometric Asian Put:       {price_geom_put: .4f}")
+print('--- Arithmetic Asian Put Comparison---')
+print(f"Plain Monte Carlo:  {price_arith_put_mc:.4f}")
+print(f"Monte Carlo with European put as CV:  {price_arith_put_cv:.4f}\n")
+
+print(f"Geometric Asian Call:  {price_geom_call:.4f}")
+print(f"Geometric Asian Put:   {price_geom_put:.4f}")
