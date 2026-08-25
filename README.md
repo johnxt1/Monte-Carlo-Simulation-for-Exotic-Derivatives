@@ -1,15 +1,14 @@
-This project implements **Monte Carlo** simulation methods for pricing **Asian options** (both arithmetic and geometric averages).  
+This project uses **Monte Carlo simulation** to price arithmetic and geometric **Asian options**.
 
-For the **Arithmetic Asian call option**, the program uses the payoff of the European call under the **Black–Scholes model** as a
-**control variate**, reducing variance and improving accuracy.  
+For the **Arithmetic Asian call and put options**, the program uses the corresponding European call and put payoffs under the **Black–Scholes model** as
+**control variates** to reduce variance and improving accuracy.  
 
-The **Geometric Asian option** does not require control variates since it has a closed-form solution under the Black–Scholes framework.
+The **Geometric Asian options** do not require control variates since they have a closed-form solution under the Black–Scholes framework. However, this project still prices them using Monte Carlo.
 
  ## Features
 - Simulates stock price paths under Geometric Brownian Motion (GBM)
-- Prices:
-  - Arithmetic Asian call & put
-  - Geometric Asian call & put
-- Includes Black–Scholes closed-form European call pricing
-- Control variate technique for variance reduction
+- Reuses the same paths for fair comparisons
+- Prices arithmetic and geometric Asian calls & puts
+- prices European call & puts under the Black–Scholes model
+- Uses control variates for variance reduction
 - Fully customizable simulation parameters
